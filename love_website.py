@@ -34,6 +34,15 @@ else:
         "где находится love_website.py.py."
     )
 
+# Фотографии: положи photo1.jpg, photo2.jpg ... рядом с файлом сайта.
+photo_sources = []
+for photo_path in sorted(Path(__file__).parent.glob("photo*")):
+    if photo_path.suffix.lower() not in (".jpg", ".jpeg", ".png", ".webp"):
+        continue
+    mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}[photo_path.suffix.lower()]
+    encoded = base64.b64encode(photo_path.read_bytes()).decode("ascii")
+    photo_sources.append(f"data:{mime};base64,{encoded}")
+
 # =====================================
 # СКРЫВАЕМ ИНТЕРФЕЙС STREAMLIT
 # =====================================
@@ -218,6 +227,20 @@ canvas {
     z-index: 5;
 }
 
+#photoLayer { position:absolute; inset:0; pointer-events:none; z-index:3; }
+.memory-photo {
+    position:absolute; width:clamp(48px, 8vw, 92px); aspect-ratio: 1 / 1;
+    object-fit:cover; border:2px solid rgba(255,188,218,.85);
+    border-radius:12px; box-shadow:0 0 18px rgba(255,65,142,.55);
+    opacity:0; transform:translate(-50%,-50%) scale(.55) rotate(var(--tilt));
+    transition:opacity 1.7s ease, transform 2s ease;
+    animation: photoFloat 4s ease-in-out infinite alternate;
+    animation-play-state:paused;
+}
+.memory-photo.visible {opacity:1; transform:translate(-50%,-50%) scale(1) rotate(var(--tilt)); animation-play-state:running;}
+@keyframes photoFloat {to {margin-top:-10px;}}
+@media(max-width:600px) {.memory-photo {width:clamp(42px, 13vw, 65px);}}
+
 </style>
 </head>
 
@@ -226,6 +249,7 @@ canvas {
 <div id="screen">
 
     <canvas id="canvas"></canvas>
+    <div id="photoLayer"></div>
 
     <div id="start">
         <div id="startText">
@@ -260,6 +284,31 @@ canvas {
 
 <script>
 
+const photoSources = __PHOTO_SOURCES__;
+const photoLayer = document.getElementById("photoLayer");
+const photoElements = [];
+function layoutPhotos() {
+    const cx = window.innerWidth / 2, cy = window.innerHeight / 2 - 15;
+    const mobile = window.innerWidth < 600;
+    const rx = window.innerWidth * (mobile ? .40 : .34);
+    const ry = window.innerHeight * (mobile ? .34 : .36);
+    photoElements.forEach((img, i) => {
+        const angle = -Math.PI / 2 + i * 2 * Math.PI / photoElements.length;
+        img.style.left = (cx + Math.cos(angle) * rx) + "px";
+        img.style.top = (cy + Math.sin(angle) * ry) + "px";
+    });
+}
+photoSources.forEach((src, i) => {
+    const img = document.createElement("img");
+    img.src = src;
+    img.alt = "Наше воспоминание";
+    img.className = "memory-photo";
+    img.style.setProperty("--tilt", ((i % 2 ? 1 : -1) * (4 + i % 4)) + "deg");
+    img.style.animationDelay = (i % 4 * .4) + "s";
+    photoLayer.appendChild(img);
+    photoElements.push(img);
+});
+layoutPhotos();
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
@@ -305,6 +354,7 @@ function resize() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     createScene();
+    layoutPhotos();
 }
 
 window.addEventListener("resize", resize);
@@ -628,6 +678,11 @@ function animate(timestamp) {
 
     drawFloatingHearts(elapsed);
 
+    // Фотографии проявляются почти одновременно с контуром сердца.
+    photoElements.forEach((img, i) => {
+        if (elapsed > 0.8 + i * 0.12) img.classList.add("visible");
+    });
+
     // Показываем надписи после рисования
     if (elapsed > 9.5) {
         message.style.opacity = "1";
@@ -694,6 +749,10 @@ resize();
 </body>
 </html>
 """
+
+# Передаём фотографии внутрь анимации.
+import json
+html_code = html_code.replace("__PHOTO_SOURCES__", json.dumps(photo_sources))
 
 # Подставляем аудиофайл
 html_code = html_code.replace(
